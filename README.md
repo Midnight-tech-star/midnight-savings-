@@ -207,3 +207,113 @@ function LoginPage({ onLogin }) {
     </div>
   );
 }
+
+src/index.css
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --midnight: #020817;
+  --deep: #050f2e;
+  --navy: #0a1940;
+  --cobalt: #0d2a6b;
+  --royal: #1a3fa0;
+  --electric: #2563eb;
+  --sky: #38bdf8;
+  --silver: #94a3b8;
+  --mist: #cbd5e1;
+  --white: #f0f4ff;
+  --gold: #f59e0b;
+  --emerald: #10b981;
+  --rose: #f43f5e;
+  --amber: #f97316;
+  --glass: rgba(255,255,255,0.04);
+  --glass2: rgba(255,255,255,0.08);
+  --border: rgba(56,189,248,0.15);
+  --glow: rgba(37,99,235,0.4);
+}
+
+html { font-size: 16px; }
+body { background: var(--midnight); color: var(--white); font-family: 'Rajdhani', sans-serif; min-height: 100vh; overflow-x: hidden; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--deep); }
+::-webkit-scrollbar-thumb { background: var(--cobalt); border-radius: 2px; }
+
+/* LAYOUT */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 260px; min-height: 100vh; background: var(--deep);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; z-index: 100;
+}
+.main { margin-left: 260px; flex: 1; min-height: 100vh; }
+
+.topbar {
+  background: rgba(5,15,46,0.95); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border); padding: 14px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 50;
+}
+
+/* CARDS */
+.card {
+  background: linear-gradient(135deg, var(--deep) 0%, var(--navy) 100%);
+  border: 1px solid var(--border); border-radius: 12px; padding: 24px;
+}
+
+.countdown-banner {
+  background: linear-gradient(135deg, var(--navy), var(--cobalt));
+  border: 1px solid rgba(56,189,248,0.25); border-radius: 12px;
+  padding: 20px 28px; display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.countdown-timer {
+  font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--sky), var(--white));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 8px; border: none; cursor: pointer;
+  font-weight: 700; letter-spacing: 0.05em;
+}
+
+.btn-primary { background: linear-gradient(135deg, var(--electric), var(--royal)); color: white; }
+.btn-success { background: linear-gradient(135deg, var(--emerald), #059669); color: white; }
+.btn-danger { background: linear-gradient(135deg, var(--rose), #be123c); color: white; }
+.btn-gold { background: linear-gradient(135deg, var(--gold), var(--amber)); color: var(--midnight); }
+
+/* TABLES, BADGES, MODALS, LOGIN etc. */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px 16px; text-align: left; }
+
+.badge { padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; }
+
+.login-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--midnight);
+}
+
+.login-card {
+  background: linear-gradient(160deg, var(--deep) 0%, var(--navy) 100%);
+  border: 1px solid var(--border); border-radius: 20px; padding: 44px 40px;
+  max-width: 420px;
+}
+
+.form-input {
+  width: 100%; background: var(--midnight); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; color: var(--white);
+}
+
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+}
