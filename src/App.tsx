@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import AuthScreen from './components/auth/AuthScreen';
 import MemberDashboard from './components/dashboard/MemberDashboard';
 import AdminDashboard from './components/dashboard/AdminDashboard';
@@ -46,6 +47,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
       <Toaster position="top-center" />
+      <SpeedInsights />
       
       {view !== 'AUTH' && (
         <Navbar 
