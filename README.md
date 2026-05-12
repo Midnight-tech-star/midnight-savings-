@@ -35,3 +35,12 @@ index.html
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
+
+vite.config.js
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})
