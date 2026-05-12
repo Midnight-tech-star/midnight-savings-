@@ -1,0 +1,1119 @@
+import { useState, useEffect, useRef } from "react";
+
+// ── MOCK DATA ────────────────────────────────────────────────────────────────
+const MOCK_MEMBERS = [
+  { id: 1, name: "Amina Wanjiru", phone: "0712345678", shares: 2, status: "paid", joinDate: "2025-01-05", role: "admin" },
+  { id: 2, name: "Brian Otieno", phone: "0723456789", shares: 1, status: "paid", joinDate: "2025-01-07", role: "treasurer" },
+  { id: 3, name: "Cynthia Mwangi", phone: "0734567890", shares: 1, status: "pending", joinDate: "2025-01-10", role: "member" },
+  { id: 4, name: "David Kamau", phone: "0745678901", shares: 2, status: "paid", joinDate: "2025-01-12", role: "member" },
+  { id: 5, name: "Esther Njoroge", phone: "0756789012", shares: 1, status: "pending", joinDate: "2025-01-15", role: "member" },
+];
+const MOCK_REQUESTS = [
+  { id: 101, name: "Felix Ochieng", phone: "0767890123", requestDate: "2025-05-10", shares: 1 },
+  { id: 102, name: "Grace Karanja", phone: "0778901234", requestDate: "2025-05-09", shares: 2 },
+  { id: 103, name: "Hassan Mwenda", phone: "0789012345", requestDate: "2025-05-08", shares: 1 },
+];
+const MOCK_TRANSACTIONS = [
+  { id: "T001", member: "Amina Wanjiru", type: "contribution", amount: 1480, date: "2025-05-10 09:14", note: "Week 19 - 2 shares" },
+  { id: "T002", member: "Brian Otieno", type: "contribution", amount: 740, date: "2025-05-10 10:02", note: "Week 19" },
+  { id: "T003", member: "David Kamau", type: "contribution", amount: 1480, date: "2025-05-10 11:45", note: "Week 19 - 2 shares" },
+  { id: "T004", member: "System", type: "payout", amount: 5920, date: "2025-05-04 08:00", note: "Sunday payout – Amina Wanjiru" },
+  { id: "T005", member: "System", type: "payout", amount: 2960, date: "2025-04-27 08:00", note: "Sunday payout – Brian Otieno" },
+];
+const PAYOUT_SCHEDULE = [
+  { week: 19, member: "Amina Wanjiru", shares: 2, amount: 5920, status: "upcoming" },
+  { week: 20, member: "Brian Otieno", shares: 1, amount: 2960, status: "scheduled" },
+  { week: 21, member: "Cynthia Mwangi", shares: 1, amount: 2960, status: "scheduled" },
+  { week: 22, member: "David Kamau", shares: 2, amount: 5920, status: "scheduled" },
+  { week: 23, member: "Esther Njoroge", shares: 1, amount: 2960, status: "scheduled" },
+];
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function getNextSaturday9PM() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun … 6=Sat
+  const daysUntilSat = (6 - day + 7) % 7 || 7;
+  const sat = new Date(now);
+  sat.setDate(now.getDate() + daysUntilSat);
+  sat.setHours(21, 0, 0, 0);
+  return sat;
+}
+function pad(n) { return String(n).padStart(2, "0"); }
+function formatCountdown(ms) {
+  if (ms <= 0) return "00:00:00:00";
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sc = s % 60;
+  return `${pad(d)}d ${pad(h)}h ${pad(m)}m ${pad(sc)}s`;
+}
+
+// ── STYLES (CSS-in-JS via template literal injected into <style>) ────────────
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --midnight: #020817;
+  --deep: #050f2e;
+  --navy: #0a1940;
+  --cobalt: #0d2a6b;
+  --royal: #1a3fa0;
+  --electric: #2563eb;
+  --sky: #38bdf8;
+  --silver: #94a3b8;
+  --mist: #cbd5e1;
+  --white: #f0f4ff;
+  --gold: #f59e0b;
+  --emerald: #10b981;
+  --rose: #f43f5e;
+  --amber: #f97316;
+  --glass: rgba(255,255,255,0.04);
+  --glass2: rgba(255,255,255,0.08);
+  --border: rgba(56,189,248,0.15);
+  --glow: rgba(37,99,235,0.4);
+}
+html { font-size: 16px; }
+body { background: var(--midnight); color: var(--white); font-family: 'Rajdhani', sans-serif; min-height: 100vh; overflow-x: hidden; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--deep); }
+::-webkit-scrollbar-thumb { background: var(--cobalt); border-radius: 2px; }
+
+/* LAYOUT */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 260px; min-height: 100vh; background: var(--deep);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; z-index: 100;
+  transition: transform 0.3s;
+}
+.sidebar-logo {
+  padding: 28px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-title {
+  font-family: 'Cinzel', serif; font-size: 1.1rem; font-weight: 900;
+  background: linear-gradient(135deg, var(--sky), var(--electric), var(--gold));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  line-height: 1.2; letter-spacing: 0.05em;
+}
+.logo-badge {
+  display: inline-block; margin-top: 6px; padding: 2px 8px;
+  background: linear-gradient(90deg, var(--electric), var(--sky));
+  border-radius: 20px; font-size: 0.65rem; font-weight: 700;
+  color: white; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.sidebar-nav { flex: 1; padding: 16px 0; overflow-y: auto; }
+.nav-section { padding: 8px 16px 4px; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--silver); font-weight: 600; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+  cursor: pointer; border: none; background: none; width: 100%;
+  color: var(--silver); font-family: 'Rajdhani', sans-serif; font-size: 0.9rem;
+  font-weight: 500; letter-spacing: 0.03em; transition: all 0.2s; text-align: left;
+  border-left: 2px solid transparent; position: relative;
+}
+.nav-item:hover { color: var(--white); background: var(--glass); border-left-color: var(--electric); }
+.nav-item.active { color: var(--sky); background: rgba(37,99,235,0.12); border-left-color: var(--sky); font-weight: 700; }
+.nav-icon { font-size: 1.1rem; width: 20px; text-align: center; }
+.nav-badge {
+  margin-left: auto; background: var(--rose); color: white;
+  border-radius: 10px; padding: 1px 7px; font-size: 0.65rem; font-weight: 700;
+}
+
+.main { margin-left: 260px; flex: 1; padding: 0; min-height: 100vh; }
+.topbar {
+  background: rgba(5,15,46,0.95); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border); padding: 14px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 50;
+}
+.topbar-title { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--mist); letter-spacing: 0.05em; }
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.user-chip {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+  background: var(--glass2); border: 1px solid var(--border); border-radius: 24px;
+  font-size: 0.8rem; font-weight: 600; color: var(--mist);
+}
+.user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--electric), var(--sky));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 900; color: white;
+}
+.role-chip {
+  padding: 2px 8px; border-radius: 10px; font-size: 0.6rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.role-admin { background: rgba(245,158,11,0.2); color: var(--gold); border: 1px solid rgba(245,158,11,0.3); }
+.role-member { background: rgba(37,99,235,0.2); color: var(--sky); border: 1px solid rgba(37,99,235,0.3); }
+
+.content { padding: 32px; max-width: 1200px; }
+
+/* CARDS */
+.card {
+  background: linear-gradient(135deg, var(--deep) 0%, var(--navy) 100%);
+  border: 1px solid var(--border); border-radius: 12px; padding: 24px;
+  position: relative; overflow: hidden;
+}
+.card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--electric), transparent);
+}
+.card-title {
+  font-family: 'Cinzel', serif; font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--silver); margin-bottom: 16px;
+}
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+.stat-card {
+  background: var(--glass); border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px; position: relative; overflow: hidden;
+}
+.stat-card::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+}
+.stat-card.blue::after { background: linear-gradient(90deg, var(--electric), var(--sky)); }
+.stat-card.gold::after { background: linear-gradient(90deg, var(--gold), var(--amber)); }
+.stat-card.green::after { background: linear-gradient(90deg, var(--emerald), #34d399); }
+.stat-card.rose::after { background: linear-gradient(90deg, var(--rose), #fb7185); }
+.stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--silver); margin-bottom: 8px; }
+.stat-value { font-family: 'JetBrains Mono', monospace; font-size: 1.6rem; font-weight: 700; color: var(--white); }
+.stat-sub { font-size: 0.7rem; color: var(--silver); margin-top: 4px; }
+
+/* COUNTDOWN */
+.countdown-banner {
+  background: linear-gradient(135deg, var(--navy), var(--cobalt));
+  border: 1px solid rgba(56,189,248,0.25); border-radius: 12px;
+  padding: 20px 28px; display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 16px;
+}
+.countdown-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--silver); margin-bottom: 6px; }
+.countdown-timer {
+  font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--sky), var(--white));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  letter-spacing: 0.05em;
+}
+.deadline-info { font-size: 0.75rem; color: var(--silver); }
+
+/* BUTTONS */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border-radius: 8px; border: none; cursor: pointer; font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; transition: all 0.2s;
+  text-transform: uppercase;
+}
+.btn-primary { background: linear-gradient(135deg, var(--electric), var(--royal)); color: white; }
+.btn-primary:hover { box-shadow: 0 0 20px var(--glow); transform: translateY(-1px); }
+.btn-secondary { background: var(--glass2); border: 1px solid var(--border); color: var(--mist); }
+.btn-secondary:hover { background: var(--glass); border-color: var(--sky); color: var(--sky); }
+.btn-success { background: linear-gradient(135deg, var(--emerald), #059669); color: white; }
+.btn-success:hover { box-shadow: 0 0 16px rgba(16,185,129,0.4); }
+.btn-danger { background: linear-gradient(135deg, var(--rose), #be123c); color: white; }
+.btn-danger:hover { box-shadow: 0 0 16px rgba(244,63,94,0.4); }
+.btn-gold { background: linear-gradient(135deg, var(--gold), var(--amber)); color: var(--midnight); }
+.btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+/* INPUTS */
+.form-group { margin-bottom: 18px; }
+.form-label { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--silver); margin-bottom: 6px; font-weight: 600; }
+.form-input {
+  width: 100%; background: var(--midnight); border: 1px solid var(--border);
+  border-radius: 8px; padding: 11px 14px; color: var(--white);
+  font-family: 'Rajdhani', sans-serif; font-size: 0.95rem; font-weight: 500;
+  transition: border-color 0.2s;
+}
+.form-input:focus { outline: none; border-color: var(--electric); box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+.input-with-suffix { position: relative; }
+.input-with-suffix .form-input { padding-right: 60px; }
+.input-suffix {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--silver);
+  font-weight: 600; pointer-events: none;
+}
+
+/* TABLES */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+thead th {
+  padding: 12px 16px; text-align: left; font-size: 0.65rem;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--silver);
+  border-bottom: 1px solid var(--border); font-weight: 700; cursor: pointer;
+  user-select: none; white-space: nowrap;
+}
+thead th:hover { color: var(--sky); }
+tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.15s; }
+tbody tr:hover { background: var(--glass); }
+tbody td { padding: 14px 16px; color: var(--mist); vertical-align: middle; }
+
+/* BADGES */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.status-paid { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+.status-pending { background: rgba(249,115,22,0.15); color: var(--amber); border: 1px solid rgba(249,115,22,0.3); }
+.status-upcoming { background: rgba(56,189,248,0.15); color: var(--sky); border: 1px solid rgba(56,189,248,0.3); }
+.status-scheduled { background: rgba(148,163,184,0.1); color: var(--silver); border: 1px solid rgba(148,163,184,0.2); }
+.status-eligible { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+.status-ineligible { background: rgba(244,63,94,0.15); color: var(--rose); border: 1px solid rgba(244,63,94,0.3); }
+.badge-contribution { background: rgba(37,99,235,0.15); color: var(--sky); border: 1px solid rgba(37,99,235,0.3); }
+.badge-payout { background: rgba(245,158,11,0.15); color: var(--gold); border: 1px solid rgba(245,158,11,0.3); }
+
+/* TABS */
+.tabs { display: flex; gap: 4px; padding: 4px; background: var(--glass); border-radius: 10px; margin-bottom: 24px; border: 1px solid var(--border); flex-wrap: wrap; }
+.tab-btn {
+  flex: 1; min-width: 80px; padding: 9px 16px; border: none; border-radius: 7px;
+  cursor: pointer; font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase; transition: all 0.2s;
+  background: none; color: var(--silver); white-space: nowrap;
+}
+.tab-btn:hover { color: var(--white); }
+.tab-btn.active { background: linear-gradient(135deg, var(--electric), var(--royal)); color: white; box-shadow: 0 2px 12px var(--glow); }
+
+/* MODAL */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(2,8,23,0.85); backdrop-filter: blur(8px);
+  z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal {
+  background: linear-gradient(135deg, var(--deep), var(--navy));
+  border: 1px solid var(--border); border-radius: 16px; padding: 32px;
+  max-width: 480px; width: 100%; position: relative;
+  box-shadow: 0 0 60px rgba(37,99,235,0.2);
+}
+.modal::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--sky), transparent); }
+.modal-title { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--white); margin-bottom: 8px; }
+.modal-subtitle { font-size: 0.85rem; color: var(--silver); margin-bottom: 24px; line-height: 1.6; }
+.modal-warn { background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 0.8rem; color: var(--rose); }
+.modal-actions { display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap; }
+
+/* MEMBER LIST */
+.member-list-scroll-container { max-height: 380px; overflow-y: auto; }
+.member-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.member-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--cobalt), var(--electric));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; font-weight: 900; color: white;
+}
+.member-info { flex: 1; min-width: 0; }
+.member-name { font-weight: 700; font-size: 0.9rem; color: var(--white); }
+.member-phone { font-size: 0.75rem; color: var(--silver); font-family: 'JetBrains Mono', monospace; }
+.member-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* PAYMENT INFO */
+.payment-info-card {
+  background: linear-gradient(135deg, rgba(37,99,235,0.1), rgba(56,189,248,0.05));
+  border: 1px solid rgba(56,189,248,0.2); border-radius: 12px; padding: 24px;
+}
+.payment-field { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.payment-field:last-child { border-bottom: none; }
+.payment-key { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--silver); }
+.payment-val { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--sky); }
+
+/* CHECKLIST */
+.checklist-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.checklist-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--electric); cursor: pointer; flex-shrink: 0; }
+.checklist-timestamp { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--emerald); margin-left: auto; }
+
+/* RULES */
+.rule-item { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.rule-number { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--electric), var(--sky)); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 900; color: white; flex-shrink: 0; }
+.rule-text { font-size: 0.9rem; color: var(--mist); line-height: 1.6; padding-top: 4px; }
+
+/* TRANSACTION HISTORY */
+.transaction-history { max-height: 400px; overflow-y: scroll; }
+.tx-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.tx-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+.tx-contribution { background: rgba(37,99,235,0.15); }
+.tx-payout { background: rgba(245,158,11,0.15); }
+.tx-info { flex: 1; min-width: 0; }
+.tx-note { font-size: 0.8rem; color: var(--silver); }
+.tx-date { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--silver); }
+.tx-amount { font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; font-weight: 700; text-align: right; flex-shrink: 0; }
+.tx-in { color: var(--emerald); }
+.tx-out { color: var(--gold); }
+
+/* LOGIN PAGE */
+.login-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 30% 40%, rgba(37,99,235,0.15) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 80%, rgba(56,189,248,0.08) 0%, transparent 50%),
+              var(--midnight);
+  padding: 20px;
+}
+.login-card {
+  background: linear-gradient(160deg, var(--deep) 0%, var(--navy) 100%);
+  border: 1px solid var(--border); border-radius: 20px; padding: 44px 40px;
+  width: 100%; max-width: 420px; box-shadow: 0 0 80px rgba(37,99,235,0.15);
+  position: relative; overflow: hidden;
+}
+.login-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--electric), var(--sky), transparent); }
+.login-logo { text-align: center; margin-bottom: 36px; }
+.login-logo-title { font-family: 'Cinzel', serif; font-size: 1.6rem; font-weight: 900; background: linear-gradient(135deg, var(--sky), var(--electric), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 0.05em; line-height: 1.2; }
+.login-logo-sub { font-size: 0.75rem; color: var(--silver); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 6px; }
+.login-tabs { display: flex; gap: 4px; background: var(--glass); border-radius: 10px; padding: 4px; margin-bottom: 28px; border: 1px solid var(--border); }
+.login-tab { flex: 1; padding: 9px; border: none; border-radius: 7px; cursor: pointer; font-family: 'Rajdhani', sans-serif; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; background: none; color: var(--silver); }
+.login-tab.active { background: linear-gradient(135deg, var(--electric), var(--royal)); color: white; }
+.security-note { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--silver); margin-top: 16px; text-align: center; justify-content: center; }
+
+/* REPORT */
+.date-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.summary-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.summary-label { font-size: 0.85rem; color: var(--silver); }
+.summary-val { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+
+/* GRIDS */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .two-col, .three-col { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .content { padding: 20px 16px; }
+  .countdown-timer { font-size: 1.3rem; }
+  .stat-value { font-size: 1.2rem; }
+}
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+.section-title { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--white); }
+.divider { height: 1px; background: var(--border); margin: 24px 0; }
+.gap-2 { display: flex; gap: 8px; flex-wrap: wrap; }
+.mt-4 { margin-top: 16px; }
+.w-full { width: 100%; }
+.text-silver { color: var(--silver); font-size: 0.85rem; }
+.text-sky { color: var(--sky); }
+.text-gold { color: var(--gold); }
+.text-emerald { color: var(--emerald); }
+.text-rose { color: var(--rose); }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+.payout-amount { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 700; color: var(--gold); }
+.shimmer { animation: shimmer 2s ease-in-out infinite; }
+@keyframes shimmer { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+/* NEW MEMBER PAYMENT */
+.new-member-banner {
+  background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(249,115,22,0.08));
+  border: 1px solid rgba(245,158,11,0.25); border-radius: 12px; padding: 24px; margin-bottom: 24px;
+}
+.new-member-title { font-family: 'Cinzel', serif; font-size: 0.9rem; color: var(--gold); margin-bottom: 8px; }
+.evidence-drop {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 32px;
+  text-align: center; cursor: pointer; transition: border-color 0.2s;
+  color: var(--silver); font-size: 0.85rem;
+}
+.evidence-drop:hover { border-color: var(--electric); color: var(--sky); }
+`;
+
+// ── COMPONENTS ────────────────────────────────────────────────────────────────
+
+function Modal({ show, onClose, children }) {
+  if (!show) return null;
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">{children}</div>
+    </div>
+  );
+}
+
+function CountdownBanner() {
+  const [ms, setMs] = useState(getNextSaturday9PM() - Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setMs(getNextSaturday9PM() - Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="countdown-banner">
+      <div>
+        <div className="countdown-label">⏳ Next Contribution Deadline</div>
+        <span id="countdownTimer" aria-live="assertive" className="countdown-timer">
+          {formatCountdown(ms)}
+        </span>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div className="deadline-label" style={{ fontSize: "0.7rem", color: "var(--silver)", marginBottom: 4 }}>DEADLINE</div>
+        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--mist)" }}>Saturday 9:00 PM</div>
+        <div style={{ fontSize: "0.7rem", color: "var(--silver)", marginTop: 2 }}>Contributions close at deadline</div>
+      </div>
+    </div>
+  );
+}
+
+// ── PAGE: DASHBOARD ───────────────────────────────────────────────────────────
+function Dashboard({ currentUser, groupName, contribution }) {
+  const totalMembers = MOCK_MEMBERS.length;
+  const paidCount = MOCK_MEMBERS.filter(m => m.status === "paid").length;
+  const totalPooled = MOCK_MEMBERS.reduce((s, m) => s + (m.status === "paid" ? m.shares * contribution : 0), 0);
+  const myMember = MOCK_MEMBERS.find(m => m.id === currentUser.id);
+  const myStatus = myMember?.status || "pending";
+  const myShares = myMember?.shares || 1;
+  const nextPayout = PAYOUT_SCHEDULE[0];
+
+  return (
+    <div className="content">
+      <CountdownBanner />
+
+      <div className="stat-grid">
+        <div className="stat-card blue">
+          <div className="stat-label">Total Members</div>
+          <div className="stat-value">{totalMembers}</div>
+          <div className="stat-sub">Active participants</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-label">Paid This Week</div>
+          <div className="stat-value">{paidCount}/{totalMembers}</div>
+          <div className="stat-sub">Contributions received</div>
+        </div>
+        <div className="stat-card gold">
+          <div className="stat-label">Pool Balance</div>
+          <div className="stat-value">KSh {totalPooled.toLocaleString()}</div>
+          <div className="stat-sub">Current week pool</div>
+        </div>
+        <div className="stat-card rose">
+          <div className="stat-label">My Status</div>
+          <div className="stat-value">
+            <span className={`badge status-${myStatus}`}>
+              {myStatus === "paid" ? "✓ Paid" : "⏳ Pending"}
+            </span>
+          </div>
+          <div className="stat-sub">{myShares} share{myShares > 1 ? "s" : ""} · KSh {(myShares * contribution).toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="card">
+          <div className="card-title">📅 Next Payout</div>
+          <div className="payout-amount">KSh {nextPayout.amount.toLocaleString()}</div>
+          <div style={{ marginTop: 8, color: "var(--silver)", fontSize: "0.85rem" }}>
+            <strong style={{ color: "var(--mist)" }}>{nextPayout.member}</strong> — Week {nextPayout.week}
+          </div>
+          <div style={{ marginTop: 6, fontSize: "0.75rem", color: "var(--silver)" }}>📅 Sunday morning · {nextPayout.shares} share{nextPayout.shares > 1 ? "s" : ""}</div>
+          <div style={{ marginTop: 14 }}>
+            <span className={`badge status-${myMember?.id === 1 ? "eligible" : "ineligible"}`}>
+              {myMember?.id === 1 ? "✓ Eligible" : "✗ Ineligible"} for this payout
+            </span>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-title">💳 Payment Info</div>
+          <div className="payment-info-card">
+            <div className="payment-field">
+              <span className="payment-key">Treasurer</span>
+              <span className="payment-val">Brian Otieno</span>
+            </div>
+            <div className="payment-field">
+              <span className="payment-key">M-Pesa No.</span>
+              <span className="payment-val">0713703322</span>
+            </div>
+            <div className="payment-field">
+              <span className="payment-key">Till No.</span>
+              <span className="payment-val">3344034</span>
+            </div>
+            <div className="payment-field">
+              <span className="payment-key">Amount (1 share)</span>
+              <span className="payment-val">KSh {contribution}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" />
+      <div className="card">
+        <div className="card-title">👥 Member Payment Status — Week 19</div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Shares</th>
+                <th>Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_MEMBERS.map(m => (
+                <tr key={m.id}>
+                  <td style={{ fontWeight: 600, color: "var(--white)" }}>{m.name}</td>
+                  <td className="font-mono">{m.shares}</td>
+                  <td className="font-mono text-sky">KSh {(m.shares * contribution).toLocaleString()}</td>
+                  <td><span className={`badge status-${m.status}`}>{m.status === "paid" ? "✓ Paid" : "⏳ Pending"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PAGE: ADMIN ───────────────────────────────────────────────────────────────
+function AdminDashboard({ contribution }) {
+  const [adminTab, setAdminTab] = useState("requests");
+  const [requests, setRequests] = useState(MOCK_REQUESTS);
+  const [dismissModal, setDismissModal] = useState(null);
+  const [sortCol, setSortCol] = useState("name");
+  const [sortDir, setSortDir] = useState(1);
+  const [checklist, setChecklist] = useState({});
+  const [checkTimes, setCheckTimes] = useState({});
+  const [dateFrom, setDateFrom] = useState("2025-05-01");
+  const [dateTo, setDateTo] = useState("2025-05-11");
+
+  function handleRequest(id, action) {
+    setRequests(r => r.filter(x => x.id !== id));
+  }
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => -d);
+    else { setSortCol(col); setSortDir(1); }
+  }
+  function handleCheck(id, checked) {
+    setChecklist(c => ({ ...c, [id]: checked }));
+    if (checked) setCheckTimes(t => ({ ...t, [id]: new Date().toLocaleString() }));
+    else setCheckTimes(t => { const n = { ...t }; delete n[id]; return n; });
+  }
+
+  const sorted = [...MOCK_MEMBERS].sort((a, b) => {
+    const av = a[sortCol] ?? ""; const bv = b[sortCol] ?? "";
+    return String(av).localeCompare(String(bv)) * sortDir;
+  });
+  const totalIn = MOCK_TRANSACTIONS.filter(t => t.type === "contribution").reduce((s, t) => s + t.amount, 0);
+  const totalOut = MOCK_TRANSACTIONS.filter(t => t.type === "payout").reduce((s, t) => s + t.amount, 0);
+
+  return (
+    <div className="content">
+      <div className="section-header">
+        <div className="section-title">⚙️ Admin Dashboard</div>
+        <span className="role-chip role-admin">Admin Access</span>
+      </div>
+
+      <div className="tabs" role="tablist">
+        {[["requests","Requests"],["members","Members"],["ledger","Ledger"],["checklist","Payouts"],["report","Report"]].map(([k,l]) => (
+          <button key={k} role="tab" aria-selected={adminTab===k} className={`tab-btn ${adminTab===k?"active":""}`} onClick={()=>setAdminTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {/* REQUESTS */}
+      {adminTab === "requests" && (
+        <div className="card">
+          <div className="card-title">📋 Pending Membership Requests ({requests.length})</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th onClick={()=>handleSort("name")}>Name {sortCol==="name"?(sortDir>0?"↑":"↓"):""}</th>
+                  <th>Phone</th>
+                  <th onClick={()=>handleSort("requestDate")}>Date {sortCol==="requestDate"?(sortDir>0?"↑":"↓"):""}</th>
+                  <th>Shares</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.length === 0 && (
+                  <tr><td colSpan={5} style={{textAlign:"center",color:"var(--silver)",padding:"32px"}}>No pending requests</td></tr>
+                )}
+                {requests.map(r => (
+                  <tr key={r.id}>
+                    <td style={{fontWeight:700,color:"var(--white)"}}>{r.name}</td>
+                    <td className="font-mono" style={{fontSize:"0.8rem"}}>{r.phone}</td>
+                    <td style={{fontSize:"0.8rem",color:"var(--silver)"}}>{r.requestDate}</td>
+                    <td className="font-mono">{r.shares}</td>
+                    <td>
+                      <div className="gap-2">
+                        <button className="btn btn-success btn-sm" data-request-id={r.id} onClick={()=>handleRequest(r.id,"accept")}>✓ Accept</button>
+                        <button className="btn btn-danger btn-sm" data-request-id={r.id} onClick={()=>handleRequest(r.id,"reject")}>✗ Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* MEMBERS */}
+      {adminTab === "members" && (
+        <div className="card">
+          <div className="card-title">👥 Member List</div>
+          <div className="member-list-scroll-container">
+            {MOCK_MEMBERS.map(m => (
+              <div className="member-row" key={m.id}>
+                <div className="member-avatar">{m.name.split(" ").map(x=>x[0]).join("")}</div>
+                <div className="member-info">
+                  <div className="member-name">{m.name}</div>
+                  <div className="member-phone">{m.phone}</div>
+                  <div style={{marginTop:4}}><span className={`badge role-${m.role === "admin" ? "admin" : "member"}`} style={{fontSize:"0.6rem"}}>{m.role}</span></div>
+                </div>
+                <div className="member-actions">
+                  <span className={`badge status-${m.status}`}>{m.status === "paid" ? "✓ Paid" : "⏳ Pending"}</span>
+                  {m.role !== "admin" && (
+                    <button className="btn btn-danger btn-sm" onClick={()=>setDismissModal(m)}>Dismiss</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* LEDGER */}
+      {adminTab === "ledger" && (
+        <div className="card">
+          <div className="card-title">📒 Paid Members Ledger — Week 19</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th onClick={()=>handleSort("name")}>Member</th>
+                  <th>Shares</th>
+                  <th>Amount</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MOCK_MEMBERS.filter(m=>m.status==="paid").map(m=>(
+                  <tr key={m.id}>
+                    <td style={{fontWeight:700,color:"var(--white)"}}>{m.name}</td>
+                    <td className="font-mono">{m.shares}</td>
+                    <td className="font-mono text-sky">KSh {(m.shares*contribution).toLocaleString()}</td>
+                    <td style={{fontSize:"0.75rem",color:"var(--silver)",fontFamily:"monospace"}}>2025-05-10 {String(9+m.id).padStart(2,"0")}:{String(m.id*7%60).padStart(2,"0")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* PAYOUT CHECKLIST */}
+      {adminTab === "checklist" && (
+        <div className="card">
+          <div className="card-title">✅ Payout Confirmation Checklist</div>
+          {PAYOUT_SCHEDULE.map(p=>(
+            <div className="checklist-row" key={p.week}>
+              <input type="checkbox" data-member-id={p.week} checked={!!checklist[p.week]} onChange={e=>handleCheck(p.week,e.target.checked)} aria-label={`Confirm payout for ${p.member}`}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:"var(--white)",fontSize:"0.9rem"}}>{p.member}</div>
+                <div style={{fontSize:"0.75rem",color:"var(--silver)"}}>Week {p.week} · {p.shares} share{p.shares>1?"s":""} · <span className="font-mono text-gold">KSh {p.amount.toLocaleString()}</span></div>
+              </div>
+              <span className={`badge status-${p.status}`}>{p.status}</span>
+              {checkTimes[p.week] && <span className="checklist-timestamp">{checkTimes[p.week]}</span>}
+            </div>
+          ))}
+          <div style={{marginTop:20}}>
+            <div style={{fontSize:"0.75rem",color:"var(--silver)"}}>📸 Payout Evidence</div>
+            <div className="evidence-drop" style={{marginTop:10}} onClick={()=>alert("Upload feature — connect to storage backend")}>
+              📎 Click to upload payout screenshot / receipt
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WEEKLY REPORT */}
+      {adminTab === "report" && (
+        <div className="card">
+          <div className="card-title">📊 Weekly Savings Report</div>
+          <div className="date-row">
+            <div className="form-group" style={{margin:0,flex:1}}>
+              <label className="form-label">From</label>
+              <input type="date" className="form-input" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
+            </div>
+            <div className="form-group" style={{margin:0,flex:1}}>
+              <label className="form-label">To</label>
+              <input type="date" className="form-input" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
+            </div>
+            <div style={{display:"flex",alignItems:"flex-end"}}>
+              <button className="btn btn-primary">Generate</button>
+            </div>
+          </div>
+          <div className="divider" />
+          <div>
+            <div className="summary-row"><span className="summary-label">Total Money In</span><span className="summary-val text-emerald">+ KSh {totalIn.toLocaleString()}</span></div>
+            <div className="summary-row"><span className="summary-label">Total Payouts Out</span><span className="summary-val text-gold">- KSh {totalOut.toLocaleString()}</span></div>
+            <div className="summary-row"><span className="summary-label">Net Balance</span><span className="summary-val text-sky">KSh {(totalIn-totalOut).toLocaleString()}</span></div>
+            <div className="summary-row"><span className="summary-label">Members Paid</span><span className="summary-val">{MOCK_MEMBERS.filter(m=>m.status==="paid").length}/{MOCK_MEMBERS.length}</span></div>
+            <div className="summary-row"><span className="summary-label">Pending Requests</span><span className="summary-val text-rose">{requests.length}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* DISMISS MODAL */}
+      <Modal show={!!dismissModal} onClose={()=>setDismissModal(null)}>
+        <div className="modal-title">Remove Member</div>
+        <div className="modal-subtitle">You are about to remove <strong>{dismissModal?.name}</strong> from the group. This action cannot be undone.</div>
+        <div className="modal-warn">⚠️ Removing a member mid-round may affect payout calculations.</div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={()=>setDismissModal(null)}>Cancel</button>
+          <button className="btn btn-danger" onClick={()=>setDismissModal(null)}>Confirm Remove</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ── PAGE: RULES ───────────────────────────────────────────────────────────────
+function RulesPage({ roundActive }) {
+  const [exitModal, setExitModal] = useState(false);
+  const [warnModal, setWarnModal] = useState(false);
+  const rules = [
+    "Each member must contribute KSh 740 per share by Saturday at 9:00 PM each week.",
+    "Members may hold up to 2 shares, doubling both contribution and payout.",
+    "Payouts are disbursed every Sunday morning based on the rotation schedule.",
+    "Late contributions will incur a penalty as decided by the admin.",
+    "Members wishing to exit must do so between rounds — exit is not allowed during an active round.",
+    "The treasurer is responsible for collecting and disbursing funds. All transactions must be verified.",
+    "Membership requests are reviewed and approved by the admin within 48 hours.",
+    "All members must maintain respectful conduct. Violations may result in dismissal.",
+    "Account closure before term end carries no compensation for remaining rounds.",
+    "Disputes are resolved by majority vote among active members.",
+  ];
+  function handleExit() {
+    if (roundActive) setWarnModal(true);
+    else setExitModal(true);
+  }
+  return (
+    <div className="content">
+      <div role="tabpanel" id="rulesTab" aria-labelledby="rulesTabButton">
+        <div className="section-header">
+          <div className="section-title">📜 Group Rules & Bylaws</div>
+          <button id="exitGroupBtn" className="btn btn-danger" onClick={handleExit} disabled={false}>
+            🚪 Exit Group
+          </button>
+        </div>
+        <div className="card">
+          {rules.map((r,i) => (
+            <div className="rule-item" key={i}>
+              <div className="rule-number">{i+1}</div>
+              <div className="rule-text">{r}</div>
+            </div>
+          ))}
+        </div>
+        <div className="card" style={{marginTop:20}}>
+          <div className="card-title">⚠️ Disbursement Eligibility</div>
+          <div style={{fontSize:"0.9rem",color:"var(--mist)",lineHeight:1.8}}>
+            <p>Payouts are based on your position in the rotation and the number of shares held.</p>
+            <p style={{marginTop:8}}>Members who miss two consecutive payments may be marked <span className="badge status-ineligible">Ineligible</span> until arrears are cleared.</p>
+            <p style={{marginTop:8}}>Sunday payouts are processed between 8:00 AM – 10:00 AM.</p>
+          </div>
+        </div>
+      </div>
+      {/* Exit Warning Modal */}
+      <Modal show={warnModal} onClose={()=>setWarnModal(false)}>
+        <div className="modal-title">⚠️ Cannot Exit Now</div>
+        <div className="modal-subtitle">Cannot exit during an active round. Please wait until the current round completes before requesting to leave.</div>
+        <div className="modal-actions">
+          <button className="btn btn-primary" onClick={()=>setWarnModal(false)}>Understood</button>
+        </div>
+      </Modal>
+      {/* Exit Confirm Modal */}
+      <Modal show={exitModal} onClose={()=>setExitModal(false)}>
+        <div className="modal-title">Exit Midnight Savings?</div>
+        <div className="modal-subtitle">Are you sure you want to leave this group?</div>
+        <div className="modal-warn">🚨 No compensation will be provided before the term end. Your position in the payout queue will be forfeited.</div>
+        <div className="form-group" style={{marginTop:8}}>
+          <label className="form-label">Type "EXIT" to confirm</label>
+          <input className="form-input" placeholder="EXIT" />
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={()=>setExitModal(false)}>Cancel</button>
+          <button className="btn btn-danger">Confirm Exit</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ── PAGE: TRANSACTIONS ────────────────────────────────────────────────────────
+function TransactionsPage() {
+  return (
+    <div className="content">
+      <div className="section-title" style={{marginBottom:20}}>📋 Transaction History</div>
+      <div className="card">
+        <div className="transaction-history">
+          {MOCK_TRANSACTIONS.map(tx => (
+            <div className="tx-row" key={tx.id}>
+              <div className={`tx-icon tx-${tx.type}`}>{tx.type==="contribution"?"💳":"💰"}</div>
+              <div className="tx-info">
+                <div style={{fontWeight:700,color:"var(--white)",fontSize:"0.9rem"}}>{tx.member}</div>
+                <div className="tx-note">{tx.note}</div>
+                <div className="tx-date">{tx.date} · {tx.id}</div>
+              </div>
+              <div>
+                <span className={`badge ${tx.type==="contribution"?"badge-contribution":"badge-payout"}`}>{tx.type}</span>
+              </div>
+              <div className={`tx-amount ${tx.type==="contribution"?"tx-in":"tx-out"}`}>
+                {tx.type==="contribution"?"+":"-"}KSh {tx.amount.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PAGE: GROUP SETTINGS ──────────────────────────────────────────────────────
+function GroupSettings({ groupName, setGroupName, contribution, setContribution, currentUser }) {
+  const [nameInput, setNameInput] = useState(groupName);
+  const [contribInput, setContribInput] = useState(contribution);
+  const [closeModal, setCloseModal] = useState(false);
+  const [closeInput, setCloseInput] = useState("");
+  const isAdmin = currentUser.role === "admin";
+
+  return (
+    <div className="content">
+      <div className="section-title" style={{marginBottom:20}}>⚙️ Group Settings</div>
+      <div className="two-col">
+        <div className="card">
+          <div className="card-title">Group Identity</div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="groupNameInput">Group Name</label>
+            <input
+              id="groupNameInput" type="text" className="form-input"
+              value={nameInput} onChange={e=>setNameInput(e.target.value)}
+              disabled={!isAdmin} placeholder="Enter group name"
+            />
+          </div>
+          <p className="current-group-name" aria-live="polite" style={{fontSize:"0.8rem",color:"var(--silver)",marginBottom:16}}>
+            Current: <strong style={{color:"var(--mist)"}}>{groupName}</strong>
+          </p>
+          <div className="form-group">
+            <label className="form-label" htmlFor="contributionAmountInput">Contribution per Share</label>
+            <div className="input-with-suffix">
+              <input
+                id="contributionAmountInput" type="number" className="form-input"
+                min="0" value={contribInput} onChange={e=>setContribInput(Number(e.target.value))}
+                disabled={!isAdmin}
+              />
+              <span className="input-suffix">KSh</span>
+            </div>
+          </div>
+          {isAdmin && (
+            <button id="updateContributionBtn" type="button" className="btn btn-primary" onClick={()=>{setGroupName(nameInput);setContribution(contribInput);}}>
+              💾 Save Changes
+            </button>
+          )}
+          {!isAdmin && <div className="text-silver mt-4">Only admins can modify group settings.</div>}
+        </div>
+        <div className="card">
+          <div className="card-title">Danger Zone</div>
+          <div style={{fontSize:"0.85rem",color:"var(--silver)",marginBottom:16,lineHeight:1.7}}>
+            Closing your account will permanently remove you from the platform. This action is irreversible.
+          </div>
+          <button className="btn btn-danger" onClick={()=>setCloseModal(true)}>🗑️ Close Account</button>
+        </div>
+      </div>
+
+      <Modal show={closeModal} onClose={()=>setCloseModal(false)}>
+        <div className="modal-title">Close Account</div>
+        <div className="modal-subtitle">This will permanently close your account and remove all your data.</div>
+        <div className="modal-warn">🚨 No compensation will be provided before the term end. All pending payouts will be forfeited.</div>
+        <div className="form-group">
+          <label className="form-label">Type "CLOSE" to confirm</label>
+          <input className="form-input" value={closeInput} onChange={e=>setCloseInput(e.target.value)} placeholder="CLOSE" />
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={()=>{setCloseModal(false);setCloseInput("");}}>Cancel</button>
+          <button className="btn btn-danger" disabled={closeInput!=="CLOSE"}>Permanently Close</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ── PAGE: JOIN ────────────────────────────────────────────────────────────────
+function JoinPage({ currentUser }) {
+  const [shares, setShares] = useState(1);
+  const contribution = 740;
+  const isMember = currentUser.isMember;
+
+  return (
+    <div className="content">
+      <div className="section-title" style={{marginBottom:20}}>🤝 Join Group</div>
+      {isMember ? (
+        <div className="card">
+          <div style={{textAlign:"center",padding:"32px 0"}}>
+            <div style={{fontSize:"3rem",marginBottom:12}}>✅</div>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:"1rem",color:"var(--sky)",marginBottom:8}}>You are already a member</div>
+            <div style={{color:"var(--silver)",fontSize:"0.85rem"}}>Your application was approved. Welcome to Midnight Savings 💯</div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="new-member-banner">
+            <div className="new-member-title">🌟 New Member Initial Payment</div>
+            <div style={{fontSize:"0.85rem",color:"var(--silver)",marginBottom:16}}>Complete your initial contribution to activate your membership.</div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="initialContributionInput">Number of Shares</label>
+              <input type="number" id="shares" className="form-input" min={1} max={2} value={shares} onChange={e=>setShares(Math.max(1,Math.min(2,Number(e.target.value))))} style={{maxWidth:200}} />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="initialContributionInput">Initial Contribution</label>
+              <div className="input-with-suffix" style={{maxWidth:200}}>
+                <input id="initialContributionInput" type="number" className="form-input" value={shares * contribution} min="100" readOnly />
+                <span className="input-suffix">KSh</span>
+              </div>
+            </div>
+            <button id="submitInitialPaymentBtn" type="submit" className="btn btn-gold">💳 Proceed to Pay</button>
+          </div>
+          <div className="card">
+            <div className="card-title">📋 Send Payment To</div>
+            <div className="payment-info-card">
+              <div className="payment-field"><span className="payment-key">M-Pesa No.</span><span className="payment-val">0713703322</span></div>
+              <div className="payment-field"><span className="payment-key">Till No.</span><span className="payment-val">3344034</span></div>
+            </div>
+          </div>
+        </>
+      )}
+      <div style={{marginTop:20}}>
+        <button id="joinGroupBtn" type="button" className="btn btn-primary" disabled={isMember}>
+          {isMember ? "✓ Already a Member" : "🔗 Send Join Request"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── LOGIN PAGE ────────────────────────────────────────────────────────────────
+function LoginPage({ onLogin }) {
+  const [tab, setTab] = useState("login");
+  const [phone, setPhone] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [name, setName] = useState("");
+
+  function handleSubmit() {
+    if (phone.length >= 10) onLogin({ id: 1, name: name || "Amina Wanjiru", phone, role: "admin", isMember: true });
+  }
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-logo">
+          <div style={{fontSize:"2.5rem",marginBottom:8}}>💯</div>
+          <div className="login-logo-title">Midnight Savings</div>
+          <div className="login-logo-sub">Secure Group Savings Platform</div>
+        </div>
+        <div className="login-tabs">
+          <button className={`login-tab ${tab==="login"?"active":""}`} onClick={()=>setTab("login")}>Sign In</button>
+          <button className={`login-tab ${tab==="register"?"active":""}`} onClick={()=>setTab("register")}>Register</button>
+        </div>
+        {tab === "register" && (
+          <div className="form-group">
+            <label className="form-label">Full Name</label>
+            <input type="text" className="form-input" placeholder="Your full name" value={name} onChange={e=>setName(e.target.value)} />
+          </div>
+        )}
+        <div className="form-group">
+          <label className="form-label">Phone Number</label>
+          <input type="tel" className="form-input" placeholder="07XXXXXXXX" value={phone} onChange={e=>setPhone(e.target.value)} maxLength={12} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{tab==="login"?"Passcode":"Create Passcode"}</label>
+          <input type="password" className="form-input" placeholder="6-digit passcode" value={passcode} onChange={e=>setPasscode(e.target.value)} maxLength={6} />
+        </div>
+        {tab==="register" && (
+          <div className="form-group">
+            <label className="form-label">Confirm Passcode</label>
+            <input type="password" className="form-input" placeholder="Repeat passcode" value={confirm} onChange={e=>setConfirm(e.target.value)} maxLength={6} />
+          </div>
+        )}
+        <button className="btn btn-primary w-full" style={{marginTop:8,justifyContent:"center"}} onClick={handleSubmit}>
+          {tab==="login"?"🔐 Sign In":"✨ Create Account"}
+        </button>
+        <div className="security-note">🔒 Your data is encrypted and private</div>
+        {tab==="login" && <div style={{textAlign:"center",marginTop:12,fontSize:"0.75rem",color:"var(--silver)"}}>New here? <button onClick={()=>setTab("register")} style={{background:"none",border:"none",color:"var(--sky)",cursor:"pointer",fontWeight:700,fontFamily:"'Rajdhani',sans-serif"}}>Create account</button></div>}
+      </div>
+    </div>
+  );
+}
+
+// ── APP SHELL ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [page, setPage] = useState("dashboard");
+  const [groupName, setGroupName] = useState("Midnight Savings 💯");
+  const [contribution, setContribution] = useState(740);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const roundActive = true; // mock
+
+  function handleLogin(user) { setCurrentUser(user); setLoggedIn(true); }
+  function handleLogout() { setCurrentUser(null); setLoggedIn(false); }
+
+  const pendingCount = MOCK_REQUESTS.length;
+  const isAdmin = currentUser?.role === "admin";
+
+  const navItems = [
+    { key: "dashboard", icon: "🏠", label: "Dashboard" },
+    { key: "transactions", icon: "📋", label: "Transactions" },
+    { key: "rules", icon: "📜", label: "Rules" },
+    { key: "join", icon: "🤝", label: "Join Group" },
+    { key: "settings", icon: "⚙️", label: "Settings" },
+    ...(isAdmin ? [{ key: "admin", icon: "🛡️", label: "Admin", badge: pendingCount }] : []),
+  ];
+
+  if (!loggedIn) return (
+    <>
+      <style>{CSS}</style>
+      <LoginPage onLogin={handleLogin} />
+    </>
+  );
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="app">
+        {/* SIDEBAR */}
+        <aside className={`sidebar ${sidebarOpen?"open":""}`}>
+          <div className="sidebar-logo">
+            <div style={{fontSize:"1.8rem",marginBottom:4}}>💯</div>
+            <div className="logo-title">{groupName}</div>
+            <span className="logo-badge">Live</span>
+          </div>
+          <nav className="sidebar-nav">
+            <div className="nav-section">Navigation</div>
+            {navItems.map(item => (
+              <button key={item.key} className={`nav-item ${page===item.key?"active":""}`} onClick={()=>{setPage(item.key);setSidebarOpen(false);}}>
+                <span className="nav-icon">{item.icon}</span>
+                {item.label}
+                {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
+              </button>
+            ))}
+          </nav>
+          <div style={{padding:"16px 20px",borderTop:"1px solid var(--border)"}}>
+            <button className="btn btn-secondary btn-sm w-full" onClick={handleLogout}>← Sign Out</button>
+          </div>
+        </aside>
+
+        {/* MAIN */}
+        <main className="main">
+          <div className="topbar">
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>setSidebarOpen(o=>!o)} style={{background:"none",border:"none",color:"var(--silver)",fontSize:"1.2rem",cursor:"pointer",display:"none"}} className="menu-btn">☰</button>
+              <div className="topbar-title">{navItems.find(n=>n.key===page)?.label ?? "Dashboard"}</div>
+            </div>
+            <div className="topbar-right">
+              <span className={`role-chip ${isAdmin?"role-admin":"role-member"}`}>{currentUser?.role}</span>
+              <div className="user-chip">
+                <div className="user-avatar">{currentUser?.name?.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
+                {currentUser?.name?.split(" ")[0]}
+              </div>
+            </div>
+          </div>
+
+          {page === "dashboard" && <Dashboard currentUser={currentUser} groupName={groupName} contribution={contribution} />}
+          {page === "transactions" && <TransactionsPage />}
+          {page === "rules" && <RulesPage roundActive={roundActive} />}
+          {page === "join" && <JoinPage currentUser={currentUser} />}
+          {page === "settings" && <GroupSettings groupName={groupName} setGroupName={setGroupName} contribution={contribution} setContribution={setContribution} currentUser={currentUser} />}
+          {page === "admin" && isAdmin && <AdminDashboard contribution={contribution} />}
+        </main>
+      </div>
+    </>
+  );
+}
